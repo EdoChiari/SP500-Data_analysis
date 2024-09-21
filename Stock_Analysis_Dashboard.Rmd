@@ -1,0 +1,223 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+## UI code
+```{r}
+ui <- dashboardPage(
+  dashboardHeader(title = "Stock Analyser"),
+  
+  dashboardSidebar(
+    selectInput("ticker_select", "Ticker", sp500$Ticker) # Removed the trailing comma here
+  ),
+  
+  dashboardBody(
+    
+    # Upper Section: Price chart
+    fluidRow(
+      column(
+        width = 12, # Full width for price chart
+        box(
+          width = "100%",
+          title = "Stock Price Chart", 
+          plotOutput('price_chart')
+        )
+      )
+    ),
+    
+    # Lower Section: Industry chart and Performance chart
+    fluidRow(
+      column(
+        width = 8, # 2/3 width for industry chart
+        box(
+          width = "100%",
+          title = "Industry Chart", 
+          plotOutput('industry_chart')
+        )
+      ),
+      column(
+        width = 4, # 1/3 width for performance chart
+        box(
+          width = "100%",
+          title = "Performance Chart", 
+          plotOutput('performance_chart')
+        )
+      )
+    )
+  )
+)
+```
+
+## Server code
+```{r}
+server <- function(input, output){
+  
+  #Price chart
+  output$price_chart <- renderPlot({
+    
+    price_data <- return_long %>% 
+      filter(Ticker == input$ticker_select, Series == "Close")
+    
+    # Create a linechart
+    price_chart <- ggplot(price_data) +
+      geom_line(aes(x = Date, y = Value), color = "#0066ff") +
+      xlab("Date") + 
+      ylab("Stock Price") +
+      labs(
+        title = paste0(price_data$Name[1], "(",input$ticker_select,")"),
+        subtitle = price_data$Sector[1]
+      ) +
+      scale_y_continuous(label = scales::dollar) + 
+      theme(
+        plot.background = element_rect(fill = "#17202A"),
+        panel.background = element_rect(fill = "#17202A"),
+        axis.text.x = element_text(color = "#ffffff"),
+        axis.text.y = element_text(color = "#ffffff"),
+        axis.title.x = element_text(color = "#ffffff"),
+        axis.title.y = element_text(color = "#ffffff"),
+        plot.title = element_text(color = "#ffffff"),
+        plot.subtitle = element_text(color = "#ffffff"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_line(color = "#273746"),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        legend.position = "none"
+      )
+    
+    price_chart
+  })
+  
+  output$candlestick_chart <- renderPlot({
+    
+    charting_data <- return_long %>% 
+      filter(Ticker == input$ticker_select, Date >= input$begin_date, Date <= input$end_date)
+    
+    charting_data$Date <- as.factor(charting_data$Date)
+    
+    candlestick <- ggplot(charting_data) +
+      geom_boxplot(aes(x = Date, y = Value, fill = Movement), color = "#D0D3D4", width = 0.2) +
+      scale_fill_manual(values = c(Up = "#0066ff", Down = "#ffff00")) + 
+      xlab("Date") + 
+      ylab("Stock Price") +
+      labs(
+        title = paste0(charting_data$Name[1], "(", input$ticker_select, ")"),
+        subtitle = charting_data$Sector[1]
+      ) +
+      scale_y_continuous(label = scales::dollar) + 
+      theme(
+        plot.background = element_rect(fill = "#17202A"),
+        panel.background = element_rect(fill = "#17202A"),
+        axis.text.x = element_text(color = "#ffffff"),
+        axis.text.y = element_text(color = "#ffffff"),
+        axis.title.x = element_text(color = "#ffffff"),
+        axis.title.y = element_text(color = "#ffffff"),
+        plot.title = element_text(color = "#ffffff"),
+        plot.subtitle = element_text(color = "#ffffff"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_line(color = "#273746"),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        legend.position = "none"
+      )
+    
+    candlestick
+  })
+  
+  
+  #Industry chart
+  output$industry_chart <- renderPlot({
+    
+    sector <- sp500 %>% filter(Ticker == input$ticker_select) %>% select(Sector) %>% as.character()
+    industry <- sp500 %>% filter(Ticker == input$ticker_select) %>% select(Industry) %>% as.character()
+    
+    industry_summary_charting <- performance_summary %>% filter(Sector == sector) %>% mutate(isIndustry = ifelse(Industry == industry, "Industry", "Non_Industry"))
+    
+    # Create the barplot
+    industry_chart <- ggplot(industry_summary_charting) +
+      geom_bar(aes(x = Industry, y = One_year, fill = isIndustry), stat = "summary", fun= "mean") +
+      scale_fill_manual(values = c(Industry = "#ffff00", Non_Industry = "#0066ff")) + 
+      ylab("One Year Return") +
+      labs(
+        title = "Industry Returns"
+      ) +
+      scale_y_continuous(label = scales::percent) + 
+      theme(
+        plot.background = element_rect(fill = "#17202A"),
+        panel.background = element_rect(fill = "#17202A"),
+        axis.text.x = element_text(color = "#ffffff"),
+        axis.text.y = element_text(color = "#ffffff"),
+        axis.title.x = element_text(color = "#ffffff"),
+        axis.title.y = element_text(color = "#ffffff"),
+        plot.title = element_text(color = "#ffffff"),
+        plot.subtitle = element_text(color = "#ffffff"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_line(color = "#273746"),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        legend.position = "none"
+      ) +
+      coord_flip()
+    
+    industry_chart
+  })
+  
+  #Performance chart
+  output$performance_chart <- renderPlot({
+    
+    preformance_summary_data <- performance_summary %>% 
+      filter(Ticker == input$ticker_select) %>%
+      select(Thirty_days, Ninety_days, One_year, Three_years, Five_years, Ten_years)
+    
+    preformance_summary_data <- preformance_summary_data %>% gather("Period", "Return")
+    
+    preformance_summary_data <- preformance_summary_data %>% mutate(
+      Period = case_when(
+        Period == "Thirty_days" ~ "1 Month",
+        Period == "Ninety_days" ~ "1 Quarter",
+        Period == "One_year" ~ "1 Year",
+        Period == "Three_years" ~ "3 Years",
+        Period == "Five_years" ~ "5 Years",
+        Period == "Ten_years" ~ "10 Years",
+      )
+    )
+    
+    preformance_summary_data$Period <- factor(preformance_summary_data$Period, levels = c("1 Month", "1 Quarter", "1 Year", "3 Years", "5 Years", "10 Years" ))
+    
+    # Create the barplot
+    performance_chart <- ggplot(preformance_summary_data) +
+      geom_bar(aes(x = Period, y = Return), stat = "identity",fill = "#0066ff") +
+      ylab("Annualized Return") +
+      labs(
+        title = "Returns"
+      ) +
+      scale_y_continuous(label = scales::percent) + 
+      theme(
+        plot.background = element_rect(fill = "#17202A"),
+        panel.background = element_rect(fill = "#17202A"),
+        axis.text.x = element_text(color = "#ffffff"),
+        axis.text.y = element_text(color = "#ffffff"),
+        axis.title.x = element_text(color = "#ffffff"),
+        axis.title.y = element_text(color = "#ffffff"),
+        plot.title = element_text(color = "#ffffff"),
+        plot.subtitle = element_text(color = "#ffffff"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.major.y = element_line(color = "#273746"),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        legend.position = "none"
+      )
+    
+    performance_chart
+  })
+  
+}
+```
+
+## Creating dashboard
+```{r}
+shinyApp(ui, server)
+```
+
